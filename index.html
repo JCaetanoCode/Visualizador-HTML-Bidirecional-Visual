@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor Bidirecional WYSIWYG Melhorado</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .toolbar {
+            background: #f8f9fa;
+            padding: 10px;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .toolbar button {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .toolbar button:hover {
+            background: #e9ecef;
+            transform: translateY(-1px);
+        }
+
+        .toolbar button:active {
+            transform: translateY(0);
+        }
+
+        .toolbar select {
+            padding: 8px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .view-toggle {
+            display: flex;
+            gap: 10px;
+            margin: 10px;
+        }
+
+        .view-toggle button {
+            flex: 1;
+            padding: 10px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .view-toggle button.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .editor-area {
+            display: flex;
+            min-height: 500px;
+        }
+
+        .code-editor, .visual-editor {
+            flex: 1;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .code-editor.hidden, .visual-editor.hidden {
+            display: none;
+        }
+
+        .code-editor textarea {
+            width: 100%;
+            height: 500px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            padding: 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            resize: vertical;
+        }
+
+        .visual-editor {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            overflow-y: auto;
+            min-height: 500px;
+        }
+
+        .visual-editor[contenteditable="true"] {
+            outline: none;
+        }
+
+        .visual-editor:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+        }
+
+        .status-bar {
+            background: #f8f9fa;
+            padding: 8px 20px;
+            font-size: 12px;
+            color: #6c757d;
+            border-top: 1px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        @media (max-width: 768px) {
+            .editor-area {
+                flex-direction: column;
+            }
+            
+            .code-editor textarea, .visual-editor {
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="toolbar">
+            <button onclick="formatDoc('bold')"><b>N</b></button>
+            <button onclick="formatDoc('italic')"><i>I</i></button>
+            <button onclick="formatDoc('underline')"><u>S</u></button>
+            <button onclick="formatDoc('strikeThrough')"><s>T</s></button>
+            <select onchange="formatDoc('fontName', this.value)">
+                <option value="Arial">Arial</option>
+                <option value="Times New Roman">Times New Roman</option>
+                <option value="Courier New">Courier New</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Verdana">Verdana</option>
+            </select>
+            <select onchange="formatDoc('fontSize', this.value)">
+                <option value="1">Pequeno</option>
+                <option value="3" selected>Normal</option>
+                <option value="5">Grande</option>
+                <option value="7">Muito Grande</option>
+            </select>
+            <button onclick="formatDoc('insertUnorderedList')">• Lista</button>
+            <button onclick="formatDoc('insertOrderedList')">1. Lista</button>
+            <button onclick="formatDoc('justifyLeft')">⟵</button>
+            <button onclick="formatDoc('justifyCenter')">⟷</button>
+            <button onclick="formatDoc('justifyRight')">⟶</button>
+            <button onclick="formatDoc('removeFormat')">Limpar</button>
+        </div>
+
+        <div class="view-toggle">
+            <button id="btnBoth" class="active">Ambos</button>
+            <button id="btnVisual">Apenas Visual</button>
+            <button id="btnCode">Apenas Código</button>
+        </div>
+
+        <div class="editor-area">
+            <div id="codeContainer" class="code-editor">
+                <textarea id="htmlCode" placeholder="Código HTML..."></textarea>
+            </div>
+            <div id="visualContainer" class="visual-editor" contenteditable="true"></div>
+        </div>
+
+        <div class="status-bar">
+            <span>✅ Sincronização automática</span>
+            <span id="wordCount">Palavras: 0</span>
+        </div>
+    </div>
+
+    <script>
+        // Elementos DOM
+        const visualEditor = document.getElementById('visualContainer');
+        const codeEditor = document.getElementById('htmlCode');
+        const btnBoth = document.getElementById('btnBoth');
+        const btnVisual = document.getElementById('btnVisual');
+        const btnCode = document.getElementById('btnCode');
+        const codeContainer = document.getElementById('codeContainer');
+        const visualContainer = document.getElementById('visualContainer');
+        const wordCountSpan = document.getElementById('wordCount');
+
+        let isUpdatingFromCode = false;
+        let isUpdatingFromVisual = false;
+        let updateTimeout = null;
+
+        // Inicializar com conteúdo padrão
+        const defaultContent = '<h1>Editor Bidirecional WYSIWYG</h1><p>Digite aqui seu conteúdo...</p><p><strong>Negrito</strong>, <em>Itálico</em>, <u>Sublinhado</u></p>';
+        
+        // Função para contar palavras
+        function updateWordCount() {
+            const text = visualEditor.innerText || '';
+            const words = text.trim().split(/\s+/).filter(word => word.length > 0).length;
+            wordCountSpan.textContent = `Palavras: ${words}`;
+        }
+
+        // Função para sincronizar do Visual para o Código
+        function syncToCode() {
+            if (isUpdatingFromCode) return;
+            
+            isUpdatingFromVisual = true;
+            
+            try {
+                let html = visualEditor.innerHTML;
+                // Limpar HTML vazio
+                if (html === '<br>' || html === '') {
+                    html = '';
+                }
+                codeEditor.value = html;
+                updateWordCount();
+            } catch (error) {
+                console.error('Erro ao sincronizar para código:', error);
+            } finally {
+                setTimeout(() => {
+                    isUpdatingFromVisual = false;
+                }, 10);
+            }
+        }
+
+        // Função para sincronizar do Código para o Visual
+        function syncToVisual() {
+            if (isUpdatingFromVisual) return;
+            
+            isUpdatingFromCode = true;
+            
+            try {
+                let html = codeEditor.value;
+                if (html === '') {
+                    html = '<br>';
+                }
+                
+                // Salvar posição do cursor e scroll
+                const selection = window.getSelection();
+                const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+                const scrollTop = visualEditor.scrollTop;
+                
+                visualEditor.innerHTML = html;
+                
+                // Restaurar posição do cursor se possível
+                if (range && visualEditor.contains(range.commonAncestorContainer)) {
+                    try {
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                    } catch (e) {
+                        // Falha ao restaurar, apenas mover cursor para o fim
+                        const newRange = document.createRange();
+                        newRange.selectNodeContents(visualEditor);
+                        newRange.collapse(false);
+                        selection.removeAllRanges();
+                        selection.addRange(newRange);
+                    }
+                }
+                
+                visualEditor.scrollTop = scrollTop;
+                updateWordCount();
+            } catch (error) {
+                console.error('Erro ao sincronizar para visual:', error);
+            } finally {
+                setTimeout(() => {
+                    isUpdatingFromCode = false;
+                }, 10);
+            }
+        }
+
+        // Evento de input no editor visual
+        visualEditor.addEventListener('input', function() {
+            if (updateTimeout) clearTimeout(updateTimeout);
+            updateTimeout = setTimeout(() => {
+                syncToCode();
+            }, 50);
+        });
+
+        // Eventos de teclado para melhorar performance
+        visualEditor.addEventListener('keyup', function() {
+            syncToCode();
+        });
+
+        // Evento de paste para manter formatação
+        visualEditor.addEventListener('paste', function(e) {
+            e.preventDefault();
+            const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+            document.execCommand('insertText', false, text);
+            syncToCode();
+        });
+
+        // Evento de input no editor de código
+        codeEditor.addEventListener('input', function() {
+            if (updateTimeout) clearTimeout(updateTimeout);
+            updateTimeout = setTimeout(() => {
+                syncToVisual();
+            }, 50);
+        });
+
+        // Evento de blur no código para sincronizar
+        codeEditor.addEventListener('blur', function() {
+            syncToVisual();
+        });
+
+        // Função para formatação de texto
+        window.formatDoc = function(command, value = null) {
+            visualEditor.focus();
+            
+            if (command === 'fontName' || command === 'fontSize') {
+                document.execCommand(command, false, value);
+            } else {
+                document.execCommand(command, false, null);
+            }
+            
+            syncToCode();
+        };
+
+        // Controle de visualização
+        btnBoth.addEventListener('click', function() {
+            codeContainer.classList.remove('hidden');
+            visualContainer.classList.remove('hidden');
+            btnBoth.classList.add('active');
+            btnVisual.classList.remove('active');
+            btnCode.classList.remove('active');
+            
+            // Ajustar layout
+            document.querySelector('.editor-area').style.flexDirection = 'row';
+        });
+
+        btnVisual.addEventListener('click', function() {
+            codeContainer.classList.add('hidden');
+            visualContainer.classList.remove('hidden');
+            btnVisual.classList.add('active');
+            btnBoth.classList.remove('active');
+            btnCode.classList.remove('active');
+            
+            document.querySelector('.editor-area').style.flexDirection = 'row';
+        });
+
+        btnCode.addEventListener('click', function() {
+            codeContainer.classList.remove('hidden');
+            visualContainer.classList.add('hidden');
+            btnCode.classList.add('active');
+            btnBoth.classList.remove('active');
+            btnVisual.classList.remove('active');
+            
+            document.querySelector('.editor-area').style.flexDirection = 'row';
+        });
+
+        // Prevenir perda de foco em eventos de mouse
+        visualEditor.addEventListener('mousedown', function(e) {
+            if (!isUpdatingFromCode) {
+                setTimeout(() => {
+                    if (document.activeElement !== visualEditor) {
+                        visualEditor.focus();
+                    }
+                }, 0);
+            }
+        });
+
+        // Salvar conteúdo antes de sair (opcional)
+        window.addEventListener('beforeunload', function() {
+            localStorage.setItem('editorContent', codeEditor.value);
+        });
+
+        // Carregar conteúdo salvo
+        const savedContent = localStorage.getItem('editorContent');
+        if (savedContent) {
+            codeEditor.value = savedContent;
+            syncToVisual();
+        } else {
+            // Conteúdo inicial
+            codeEditor.value = defaultContent;
+            syncToVisual();
+        }
+
+        // Garantir que o editor visual esteja focado e sincronizado
+        setTimeout(() => {
+            visualEditor.focus();
+            syncToCode();
+        }, 100);
+
+        // Observar mudanças no DOM do editor visual
+        const observer = new MutationObserver(function(mutations) {
+            if (!isUpdatingFromCode && !isUpdatingFromVisual) {
+                syncToCode();
+            }
+        });
+
+        observer.observe(visualEditor, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+
+        // Limpar timeout na destruição
+        window.addEventListener('unload', function() {
+            if (updateTimeout) clearTimeout(updateTimeout);
+            observer.disconnect();
+        });
+
+        // Ajuda para dispositivos móveis
+        visualEditor.addEventListener('touchstart', function() {
+            setTimeout(() => {
+                visualEditor.focus();
+            }, 10);
+        });
+    </script>
+</body>
+</html>
